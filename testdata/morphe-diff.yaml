@@ -1,0 +1,144 @@
+metadata:
+  spec_version: KA:MD1:YAML1
+  source:
+    version: base
+    timestamp: "2025-01-15T10:30:00Z"
+  target:
+    version: head
+    timestamp: "2025-01-20T14:45:00Z"
+  summary:
+    total_changes: 10
+    breaking: 3
+    additive: 6
+    safe: 1
+    by_type:
+      model: 2
+      field: 3
+      enum: 1
+      entity: 2
+      relationship: 2
+  generated_at: "2025-01-20T15:00:00Z"
+  generator: morphe-git-morphediff@1.0.0
+changes:
+  # Model changes
+  - operation: add
+    type: model
+    target:
+      model: User
+    definition:
+      fields:
+        ID:
+          type: uuid
+        Name:
+          type: string
+    classification: additive
+
+  - operation: remove
+    type: model
+    target:
+      model: LegacyProduct
+    reason: Model removed
+    classification: breaking
+
+  # Field changes
+  - operation: add
+    type: field
+    target:
+      model: User
+      field: Email
+    definition:
+      type: string
+      required: true
+    classification: additive
+
+  - operation: remove
+    type: field
+    target:
+      model: User
+      field: LegacyID
+    classification: breaking
+
+  - operation: modify
+    type: field
+    target:
+      model: User
+      field: Name
+    changes:
+      type:
+        after: string
+        before: text
+      required:
+        after: true
+        before: false
+    classification: breaking
+
+  # Enum changes
+  - operation: add
+    type: enum
+    target:
+      enum: UserRole
+    definition:
+      entries:
+        - name: Admin
+          value: "ADMIN"
+        - name: Editor
+          value: "EDITOR"
+        - name: Viewer
+          value: "VIEWER"
+    classification: additive
+
+  # Entity changes
+  - operation: add
+    type: entity
+    target:
+      entity: UserProfile
+    definition:
+      fields:
+        ID:
+          type: User.ID
+        Email:
+          type: User.ContactInfo.Email
+      identifiers:
+        primary: ID
+      resolved:
+        root_model: User
+        field_sources:
+          ID:
+            model: User
+            field: ID
+            type: AutoIncrement
+          Email:
+            model: ContactInfo
+            field: Email
+            type: String
+        joins:
+          - from_model: User
+            relationship: ContactInfo
+            relationship_type: HasOne
+            to_model: ContactInfo
+    classification: additive
+
+  - operation: remove
+    type: entity
+    target:
+      entity: LegacyView
+    reason: Entity deprecated
+    classification: breaking
+
+  # Relationship changes
+  - operation: add
+    type: relationship
+    target:
+      model: User
+      relationship: Profile
+    definition:
+      target: UserProfile
+      type: HasOne
+    classification: additive
+
+  - operation: remove
+    type: relationship
+    target:
+      model: User
+      relationship: LegacyProfile
+    classification: breaking

@@ -1,0 +1,30 @@
+name: "@kalo-build/plugin-morphediff-psql"
+displayName: "MorpheDiff PostgreSQL"
+description: "Generates PostgreSQL migration SQL scripts from MorpheDiff documents. Creates ALTER TABLE, CREATE TABLE, and DROP TABLE statements."
+version: "1.0.0"
+
+input:
+  format: "KA:MD1:YAML1"
+  description: "MorpheDiff change document"
+  suggestedStore:
+    name: "KA_MORPHE_DIFF"
+    type: "localFileSystem"
+    path: "./morphe-diffs"
+
+output:
+  format: "KA:PSQL:MIGRATION1"
+  description: "PostgreSQL migration SQL files"
+  suggestedStore:
+    name: "KA_MIGRATIONS"
+    type: "localFileSystem"
+    path: "./migrations"
+
+configSchema:
+  timestampPrefix:
+    type: boolean
+    default: true
+    description: "Add timestamp prefix to migration filenames (YYYYMMDDHHMMSS_name.sql)"
+  schemaName:
+    type: string
+    default: "public"
+    description: "PostgreSQL schema name for generated statements"
