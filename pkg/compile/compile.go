@@ -98,11 +98,22 @@ func loadDiffDocument(path string) (*diffdef.DiffDocument, error) {
 	return &diffDoc, nil
 }
 
-// groupChangesByType groups changes by artifact type
+// groupChangesByType groups changes by artifact type.
+// Field and relationship changes targeting an entity (target.entity) are routed
+// to the entity compiler instead of the field/relationship compilers, since
+// entity changes require full view regeneration rather than ALTER TABLE.
 func groupChangesByType(changes []diffdef.Change) map[string][]diffdef.Change {
 	grouped := make(map[string][]diffdef.Change)
 	for _, change := range changes {
-		grouped[change.Type] = append(grouped[change.Type], change)
+		routeType := change.Type
+
+		// Route entity-targeted field/relationship changes to the entity compiler
+		if (change.Type == diffdef.TypeField || change.Type == diffdef.TypeRelationship) &&
+			change.Target["entity"] != "" && change.Target["model"] == "" {
+			routeType = diffdef.TypeEntity
+		}
+
+		grouped[routeType] = append(grouped[routeType], change)
 	}
 	return grouped
 }

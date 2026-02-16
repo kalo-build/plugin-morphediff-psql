@@ -11,6 +11,10 @@ import (
 // CompileEntityDeltas processes all entity-related changes and generates output.
 // Entities in Morphe are non-persistent and resolve to underlying model tables.
 // In PostgreSQL, entities map to SQL views rather than tables.
+//
+// This handles both entity-level operations (add/remove/modify/rename/deprecate entity)
+// and entity-targeted field/relationship changes (which are routed here by groupChangesByType
+// because they carry an entity_snapshot and require full view regeneration).
 func CompileEntityDeltas(config *MorphediffCompileConfig, changes []diffdef.Change, writer *MorphediffWriter) error {
 	migrationContents := make(map[string][]byte)
 
@@ -18,30 +22,92 @@ func CompileEntityDeltas(config *MorphediffCompileConfig, changes []diffdef.Chan
 		var content []byte
 		var err error
 
-		switch change.Operation {
-		case diffdef.OperationAdd:
-			content, err = generateAddEntityMigration(*config, change)
-		case diffdef.OperationRemove:
-			content, err = generateRemoveEntityMigration(*config, change)
-		case diffdef.OperationModify:
-			content, err = generateModifyEntityMigration(*config, change)
-		case diffdef.OperationRename:
-			content, err = generateRenameEntityMigration(*config, change)
-		case diffdef.OperationDeprecate:
-			content, err = generateDeprecateEntityMigration(*config, change)
-		default:
-			return fmt.Errorf("unsupported operation for entity: %s", change.Operation)
+		// Entity-targeted field/relationship changes carry entity_snapshot and
+		// require full view regeneration regardless of the specific operation.
+		if isEntityFieldOrRelationshipChange(change) {
+			content, err = generateEntityFieldChangeMigration(*config, change)
+		} else {
+			switch change.Operation {
+			case diffdef.OperationAdd:
+				content, err = generateAddEntityMigration(*config, change)
+			case diffdef.OperationRemove:
+				content, err = generateRemoveEntityMigration(*config, change)
+			case diffdef.OperationModify:
+				content, err = generateModifyEntityMigration(*config, change)
+			case diffdef.OperationRename:
+				content, err = generateRenameEntityMigration(*config, change)
+			case diffdef.OperationDeprecate:
+				content, err = generateDeprecateEntityMigration(*config, change)
+			default:
+				return fmt.Errorf("unsupported operation for entity: %s", change.Operation)
+			}
 		}
 
 		if err != nil {
 			return fmt.Errorf("failed to generate migration for entity change: %w", err)
 		}
 
-		migrationName := generateMigrationName(config, "entity", change)
+		var migrationName string
+		if isEntityFieldOrRelationshipChange(change) {
+			migrationName = generateEntityFieldMigrationName(config, change)
+		} else {
+			migrationName = generateMigrationName(config, "entity", change)
+		}
 		migrationContents[migrationName] = content
 	}
 
 	return writer.WriteAllMigrations(migrationContents)
+}
+
+// generateEntityFieldMigrationName generates a unique migration name for entity-targeted
+// field/relationship changes. The name includes both the entity and the field/relationship
+// name to disambiguate from entity-level operations.
+func generateEntityFieldMigrationName(config *MorphediffCompileConfig, change diffdef.Change) string {
+	entityName := formatdef.ToSnakeCase(change.Target["entity"])
+	subName := ""
+	if change.Type == diffdef.TypeField {
+		subName = formatdef.ToSnakeCase(change.Target["field"])
+	} else if change.Type == diffdef.TypeRelationship {
+		subName = formatdef.ToSnakeCase(change.Target["relationship"])
+	}
+
+	baseName := fmt.Sprintf("%s_entity_%s_%s_%s", change.Operation, entityName, change.Type, subName)
+
+	if config.MigrationConfig.UseTimestamp {
+		timestamp := config.MigrationConfig.Timestamp.Format("20060102150405")
+		seq := config.MigrationConfig.NextSequence()
+		return fmt.Sprintf("%s_%03d_%s", timestamp, seq, baseName)
+	}
+
+	return baseName
+}
+
+// isEntityFieldOrRelationshipChange returns true if this is a field or relationship
+// change targeting an entity (not a direct entity-level operation).
+func isEntityFieldOrRelationshipChange(change diffdef.Change) bool {
+	return (change.Type == diffdef.TypeField || change.Type == diffdef.TypeRelationship) &&
+		change.Target["entity"] != ""
+}
+
+// generateEntityFieldChangeMigration generates a full view regeneration for entity
+// field/relationship changes. Any change to an entity's fields or relationships
+// requires regenerating the entire view using the entity_snapshot.
+func generateEntityFieldChangeMigration(config MorphediffCompileConfig, change diffdef.Change) ([]byte, error) {
+	entityName := change.Target["entity"]
+	if entityName == "" {
+		return nil, fmt.Errorf("entity name not found in change target")
+	}
+
+	// Use entity_snapshot for full view regeneration
+	if change.EntitySnapshot != nil {
+		resolved := extractResolved(change.EntitySnapshot)
+		if resolved != nil {
+			return buildViewSQL(config, entityName, change.Classification, resolved)
+		}
+	}
+
+	// Fallback if no snapshot available
+	return buildEntityPlaceholder(config, fmt.Sprintf("%s %s", change.Operation, change.Type), entityName, change.Classification)
 }
 
 // generateAddEntityMigration generates a CREATE OR REPLACE VIEW migration for adding an entity
